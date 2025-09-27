@@ -269,7 +269,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
         if (!completer.isCompleted) completer.complete(null);
       }
 
-      // wait for callback (timeout to avoid hanging)
       try {
         producedPath = await completer.future.timeout(
           const Duration(seconds: 60),
@@ -279,7 +278,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
         producedPath = null;
       }
 
-      // If trimmer didn't return a path, fallback to copying original (not trimmed)
       bool usedFallback = false;
       if (producedPath == null || producedPath.isEmpty) {
         final Directory appDocDir = await getApplicationDocumentsDirectory();
@@ -300,15 +298,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
         throw Exception('Trimmed file not found at $producedPath');
       }
 
-      // Debug info: file size and we'll check duration after init
       debugPrint('Trimmed file path: $producedPath');
       final int fileLen = await trimmedFile.length();
       debugPrint('Trimmed file size: $fileLen bytes');
 
-      // read bytes for upload (you may instead upload the File to avoid memory pressure)
       final Uint8List videoBytes = await trimmedFile.readAsBytes();
 
-      // initialize preview controller to play the trimmed file
       try {
         await _previewVideoController?.pause();
         await _previewVideoController?.dispose();
@@ -321,23 +316,20 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
       await _previewVideoController!.initialize();
 
-      // Extra debug: print duration
       final dur = _previewVideoController!.value.duration;
       debugPrint('Trimmed file duration: ${dur.inSeconds}s');
 
-      // Important: start playback of trimmed file (this fixes the "picture" issue)
       _previewVideoController!.setLooping(true);
       _previewVideoController!.setVolume(1.0);
       await _previewVideoController!.play();
 
       if (mounted) {
         setState(() {
-          _file = videoBytes; // used for upload
+          _file = videoBytes;
           _isTrimmingVideo = false;
-          _isPreviewingVideo =
-              false; // go back to main view where trimmed preview plays
+
           _isVideo = true;
-          _originalVideoPath = producedPath; // now points to trimmed file
+          _originalVideoPath = producedPath;
         });
       }
 
