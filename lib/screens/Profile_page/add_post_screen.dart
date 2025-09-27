@@ -327,7 +327,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
         setState(() {
           _file = videoBytes;
           _isTrimmingVideo = false;
-
+          // FIX: Set this to false to go back to main post screen
+          _isPreviewingVideo = false; // This redirects you to the post preview
           _isVideo = true;
           _originalVideoPath = producedPath;
         });
@@ -344,6 +345,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
     } catch (e) {
       setState(() => _isTrimmingVideo = false);
       debugPrint('Trim error: $e');
+
+      // Log error to Sup
+
       if (context.mounted) {
         showSnackBar(context,
             'Failed to trim video: $e\n(Ensure video_trimmer is configured and supports your platform.)');
