@@ -13,8 +13,6 @@ import 'package:Ratedly/models/user.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:video_trimmer/video_trimmer.dart';
 
-import 'dart:async';
-
 class AddPostScreen extends StatefulWidget {
   final VoidCallback? onPostUploaded;
   const AddPostScreen({Key? key, this.onPostUploaded}) : super(key: key);
@@ -32,18 +30,13 @@ class _AddPostScreenState extends State<AddPostScreen> {
   final double _maxFileSize = 2.5 * 1024 * 1024;
   final double _maxVideoSize = 50 * 1024 * 1024;
 
-  // Video trimming variables
+  // Video trimming variables for older version with onSave
   final Trimmer _trimmer = Trimmer();
   bool _isPreviewingVideo = false;
   double _startValue = 0.0;
   double _endValue = 0.0;
   bool _isPlaying = false;
   bool _progressVisibility = false;
-
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   void dispose() {
@@ -200,31 +193,26 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
+  // Using the exact pattern from blog post with onSave parameter
   Future<String?> _saveVideo() async {
     setState(() {
       _progressVisibility = true;
     });
 
-    String? value;
+    String? _value;
 
-    await _trimmer
-        .saveTrimmedVideo(startValue: _startValue, endValue: _endValue)
-        .then((outputPath) {
-      setState(() {
-        _progressVisibility = false;
-        value = outputPath;
-      });
-    });
-
-    return value;
-  }
-
-  // Simple video playback control that doesn't return a value
-  void _toggleVideoPlayback() {
-    _trimmer.videoPlaybackControl(
+    await _trimmer.saveTrimmedVideo(
       startValue: _startValue,
       endValue: _endValue,
+      onSave: (String? value) {
+        setState(() {
+          _progressVisibility = false;
+          _value = value;
+        });
+      },
     );
+
+    return _value;
   }
 
   Widget _buildVideoTrimmer() {
@@ -266,9 +254,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
                               // Update the video file with the trimmed version
                               _videoFile = File(outputPath);
 
-                              // Reload the trimmer with the new file
-                              _trimmer.loadVideo(videoFile: _videoFile!);
-
                               if (context.mounted) {
                                 showSnackBar(
                                     context, 'Video trimmed successfully!');
@@ -298,9 +283,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     viewerHeight: 50.0,
                     viewerWidth: MediaQuery.of(context).size.width,
                     maxVideoLength: const Duration(seconds: 30),
-                    onChangeStart: (value) =>
-                        setState(() => _startValue = value),
-                    onChangeEnd: (value) => setState(() => _endValue = value),
+                    onChangeStart: (value) => _startValue = value,
+                    onChangeEnd: (value) => _endValue = value,
                     onChangePlaybackState: (value) =>
                         setState(() => _isPlaying = value),
                   ),
@@ -317,7 +301,16 @@ class _AddPostScreenState extends State<AddPostScreen> {
                           size: 80.0,
                           color: Colors.white,
                         ),
-                  onPressed: _toggleVideoPlayback,
+                  onPressed: () async {
+                    // Using the exact pattern from blog post
+                    bool playbackState = await _trimmer.videoPlaybackControl(
+                      startValue: _startValue,
+                      endValue: _endValue,
+                    );
+                    setState(() {
+                      _isPlaying = playbackState;
+                    });
+                  },
                 )
               ],
             ),
@@ -325,13 +318,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
         ),
       ),
     );
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, "0");
-    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
-    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
-    return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
   }
 
   Future<Uint8List?> _compressUntilUnderLimit(Uint8List imageBytes) async {
@@ -376,7 +362,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
       return;
     }
 
-    // Check if we have the required media
     if (!_isVideo && _file == null) {
       if (context.mounted) {
         showSnackBar(context, "Please select media first.");
@@ -391,7 +376,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
       return;
     }
 
-    // Size checks for images
     if (!_isVideo && _file!.length > _maxFileSize) {
       if (context.mounted) {
         showSnackBar(context,
@@ -400,7 +384,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
       return;
     }
 
-    // Size checks for videos
     if (_isVideo && (await _videoFile!.length()) > _maxVideoSize) {
       if (context.mounted) {
         showSnackBar(context,
@@ -415,10 +398,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
       final String res;
 
       if (_isVideo) {
-        // Upload video file directly using the new method
         res = await SupabasePostsMethods().uploadVideoPostFromFile(
           _descriptionController.text,
-          _videoFile!, // Pass the File object directly
+          _videoFile!,
           user.uid,
           user.username ?? '',
           user.photoUrl ?? '',
@@ -476,7 +458,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
     final String photoUrl = user.photoUrl ?? '';
 
-    // If we're previewing video, show the trimmer interface
     if (_isPreviewingVideo) {
       return _buildVideoTrimmer();
     }
@@ -539,7 +520,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     child: _isVideo
                         ? Stack(
                             children: [
-                              // Use VideoViewer for consistent video playback
                               AspectRatio(
                                 aspectRatio: 16 / 9,
                                 child: VideoViewer(trimmer: _trimmer),
@@ -553,7 +533,16 @@ class _AddPostScreenState extends State<AddPostScreen> {
                                       size: 50,
                                       color: Colors.white.withOpacity(0.8),
                                     ),
-                                    onPressed: _toggleVideoPlayback,
+                                    onPressed: () async {
+                                      bool playbackState =
+                                          await _trimmer.videoPlaybackControl(
+                                        startValue: 0.0,
+                                        endValue: 30.0,
+                                      );
+                                      setState(() {
+                                        _isPlaying = playbackState;
+                                      });
+                                    },
                                   ),
                                 ),
                               ),
