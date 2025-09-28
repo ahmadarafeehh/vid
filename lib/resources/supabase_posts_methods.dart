@@ -1,6 +1,6 @@
 // lib/resources/supabase_posts_methods.dart
 import 'dart:typed_data';
-
+import 'dart:io'; // Add this line for File class
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -141,7 +141,51 @@ class SupabasePostsMethods {
     return res;
   }
 
-// Add to lib/resources/supabase_posts_methods.dart
+// Add this method to your SupabasePostsMethods class
+  Future<String> uploadVideoPostFromFile(
+    String description,
+    File videoFile, // Accept File instead of Uint8List
+    String uid,
+    String username,
+    String profImage,
+    String gender, {
+    int boostViews = 0,
+    bool isBoosted = false,
+  }) async {
+    String res = "Some error occurred";
+    try {
+      String postId = _uuid.v1();
+      String fileName = 'video_$postId.mp4';
+
+      // Use the StorageMethods to upload the File directly
+      final String videoUrl = await StorageMethods().uploadVideoFileToSupabase(
+        'videos',
+        videoFile,
+        fileName,
+      );
+
+      final payload = {
+        'postId': postId,
+        'description': description,
+        'gender': gender,
+        'postUrl': videoUrl,
+        'profImage': profImage,
+        'uid': uid,
+        'username': username,
+        'commentsCount': 0,
+        'datePublished': DateTime.now().toUtc().toIso8601String(),
+        'boost_views': boostViews,
+        'is_boosted': isBoosted,
+        'viewers_count': boostViews,
+      };
+
+      await _supabase.from('posts').insert(payload);
+      res = "success";
+    } catch (err) {
+      res = err.toString();
+    }
+    return res;
+  }
 
   // ----------------------
   // Like/unlike a comment (NOT atomic; consider server-side PG function for atomicity)
