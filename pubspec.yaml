@@ -37,7 +37,7 @@ dependencies:
   supabase_flutter: ^2.9.1
   google_mobile_ads: ^6.0.0
   video_player: ^2.8.2
-  video_trimmer: ^4.0.0-LTS
+  video_trimmer: ^5.0.0
 
 dev_dependencies:
   flutter_test:
