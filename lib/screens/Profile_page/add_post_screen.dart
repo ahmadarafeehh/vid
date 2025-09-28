@@ -601,13 +601,10 @@ class _AddPostScreenState extends State<AddPostScreen> {
       final String res;
 
       if (_isVideo) {
-        // Read video bytes only at upload time
-        final Uint8List videoBytes = await _videoFile!.readAsBytes();
-
-        // Upload video bytes
-        res = await SupabasePostsMethods().uploadVideoPost(
+        // Upload video file directly using the new method
+        res = await SupabasePostsMethods().uploadVideoPostFromFile(
           _descriptionController.text,
-          videoBytes,
+          _videoFile!, // Pass the File object directly
           user.uid,
           user.username ?? '',
           user.photoUrl ?? '',
