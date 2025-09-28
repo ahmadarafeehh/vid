@@ -12,7 +12,7 @@ import 'package:provider/provider.dart';
 import 'package:Ratedly/models/user.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:video_trimmer/video_trimmer.dart';
-import 'package:path_provider/path_provider.dart';
+
 import 'dart:async';
 
 class AddPostScreen extends StatefulWidget {
@@ -24,8 +24,8 @@ class AddPostScreen extends StatefulWidget {
 }
 
 class _AddPostScreenState extends State<AddPostScreen> {
-  Uint8List? _file; // bytes used for upload (images only)
-  File? _videoFile; // file used for videos
+  Uint8List? _file;
+  File? _videoFile;
   bool isLoading = false;
   bool _isVideo = false;
   final TextEditingController _descriptionController = TextEditingController();
@@ -35,10 +35,10 @@ class _AddPostScreenState extends State<AddPostScreen> {
   // Video trimming variables
   final Trimmer _trimmer = Trimmer();
   bool _isPreviewingVideo = false;
-  bool _isTrimmingVideo = false;
-  double _selectedStart = 0.0;
-  double _selectedEnd = 30.0;
+  double _startValue = 0.0;
+  double _endValue = 0.0;
   bool _isPlaying = false;
+  bool _progressVisibility = false;
 
   @override
   void initState() {
@@ -173,8 +173,16 @@ class _AddPostScreenState extends State<AddPostScreen> {
           return;
         }
 
-        // Initialize video preview
-        await _initializeVideoPreview(videoFile);
+        // Store the original video file
+        _videoFile = videoFile;
+
+        // Load video into trimmer
+        _loadVideo();
+
+        setState(() {
+          _isPreviewingVideo = true;
+          isLoading = false;
+        });
       } else {
         setState(() => isLoading = false);
       }
@@ -186,212 +194,136 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
-  Future<void> _initializeVideoPreview(File videoFile) async {
-    try {
-      // Store the original video file
-      _videoFile = videoFile;
-
-      // Load video into trimmer
-      await _trimmer.loadVideo(videoFile: videoFile);
-
-      // Set initial trimming bounds
-      _selectedStart = 0.0;
-      _selectedEnd = 30.0;
-
-      setState(() {
-        _isPreviewingVideo = true;
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() => isLoading = false);
-      if (context.mounted) {
-        showSnackBar(context, 'Failed to load video: $e');
-      }
+  void _loadVideo() {
+    if (_videoFile != null) {
+      _trimmer.loadVideo(videoFile: _videoFile!);
     }
   }
 
-  Future<void> _trimAndSaveVideo() async {
-    if (_videoFile == null) {
-      if (context.mounted) showSnackBar(context, 'No video available to trim.');
-      return;
-    }
-
+  Future<String?> _saveVideo() async {
     setState(() {
-      _isTrimmingVideo = true;
+      _progressVisibility = true;
     });
 
-    try {
-      String? producedPath;
+    String? value;
 
-      // Use the trimmer's saveTrimmedVideo method with onSave callback
-      await _trimmer.saveTrimmedVideo(
-        startValue: _selectedStart,
-        endValue: _selectedEnd,
-        onSave: (String? outputPath) {
-          producedPath = outputPath;
-        },
-      );
+    await _trimmer
+        .saveTrimmedVideo(startValue: _startValue, endValue: _endValue)
+        .then((outputPath) {
+      setState(() {
+        _progressVisibility = false;
+        value = outputPath;
+      });
+    });
 
-      // Fix null safety: Check for null and empty properly
-      if (producedPath == null ||
-          (producedPath != null && producedPath!.isEmpty)) {
-        // Fallback: copy the original file (no trimming)
-        final Directory appDocDir = await getApplicationDocumentsDirectory();
-        final String outputPath =
-            '${appDocDir.path}/trimmed_video_fallback_${DateTime.now().millisecondsSinceEpoch}.mp4';
-        await _videoFile!.copy(outputPath);
-        producedPath = outputPath;
-      }
+    return value;
+  }
 
-      // Fix null safety: Check for null and empty properly
-      if (producedPath == null ||
-          (producedPath != null && producedPath!.isEmpty)) {
-        throw Exception('Trimming failed (no output produced).');
-      }
-
-      // Fix null safety: Use ! to assert non-null since we checked above
-      final File trimmedFile = File(producedPath!);
-      if (!await trimmedFile.exists()) {
-        throw Exception('Trimmed file not found at $producedPath');
-      }
-
-      debugPrint('Trimmed file path: $producedPath');
-      final int fileLen = await trimmedFile.length();
-      debugPrint('Trimmed file size: $fileLen bytes');
-
-      // Store the trimmed file
-      _videoFile = trimmedFile;
-
-      // Reload the trimmer with the new file to update the preview
-      await _trimmer.loadVideo(videoFile: trimmedFile);
-
-      if (mounted) {
-        setState(() {
-          _isTrimmingVideo = false;
-          _isPreviewingVideo = false;
-          _isVideo = true;
-        });
-      }
-
-      if (context.mounted) {
-        showSnackBar(context, 'Video trimmed successfully!');
-      }
-    } catch (e) {
-      setState(() => _isTrimmingVideo = false);
-      debugPrint('Trim error: $e');
-
-      if (context.mounted) {
-        showSnackBar(
-            context, 'Failed to trim video: $e\nPlease try a different video.');
-      }
-    }
+  // Simple video playback control that doesn't return a value
+  void _toggleVideoPlayback() {
+    _trimmer.videoPlaybackControl(
+      startValue: _startValue,
+      endValue: _endValue,
+    );
   }
 
   Widget _buildVideoTrimmer() {
-    return Column(
-      children: [
-        // Video preview using VideoViewer from video_trimmer
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: VideoViewer(trimmer: _trimmer),
-        ),
-
-        // Duration info
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Text(
-            'Video will be trimmed to 30 seconds maximum',
-            style: TextStyle(color: primaryColor.withOpacity(0.7)),
-          ),
-        ),
-
-        // Trim viewer from video_trimmer
-        TrimViewer(
-          trimmer: _trimmer,
-          viewerHeight: 50.0,
-          viewerWidth: MediaQuery.of(context).size.width,
-          maxVideoLength: const Duration(seconds: 30),
-          onChangeStart: (value) {
-            setState(() {
-              _selectedStart = value;
-            });
-          },
-          onChangeEnd: (value) {
-            setState(() {
-              _selectedEnd = value;
-            });
-          },
-          onChangePlaybackState: (value) {
-            setState(() {
-              _isPlaying = value;
-            });
-          },
-        ),
-
-        // Selected time display
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _formatDuration(Duration(seconds: _selectedStart.toInt())),
-                style: TextStyle(color: primaryColor),
-              ),
-              Text(
-                _formatDuration(Duration(seconds: _selectedEnd.toInt())),
-                style: TextStyle(color: primaryColor),
-              ),
-            ],
-          ),
-        ),
-
-        // Play/pause button
-        IconButton(
-          icon: Icon(
-            _isPlaying ? Icons.pause : Icons.play_arrow,
-            size: 50.0,
-            color: primaryColor,
-          ),
-          onPressed: () async {
-            bool playbackState = await _trimmer.videoPlaybackControl(
-              startValue: _selectedStart,
-              endValue: _selectedEnd,
-            );
-            setState(() {
-              _isPlaying = playbackState;
-            });
-          },
-        ),
-
-        // Trim button
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: _isTrimmingVideo
-              ? CircularProgressIndicator(color: primaryColor)
-              : ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: blueColor,
-                    foregroundColor: primaryColor,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 32, vertical: 16),
-                  ),
-                  onPressed: _trimAndSaveVideo,
-                  child: Text('Trim Video to Selected Segment'),
-                ),
-        ),
-
-        // Cancel button
-        TextButton(
+    return Scaffold(
+      appBar: AppBar(
+        iconTheme: IconThemeData(color: primaryColor),
+        backgroundColor: mobileBackgroundColor,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: primaryColor),
           onPressed: () {
             setState(() {
               _isPreviewingVideo = false;
             });
           },
-          child: Text('Choose Different Video',
-              style: TextStyle(color: primaryColor)),
         ),
-      ],
+        title: Text('Trim Video', style: TextStyle(color: primaryColor)),
+      ),
+      body: Builder(
+        builder: (context) => Center(
+          child: Container(
+            padding: EdgeInsets.only(bottom: 30.0),
+            color: Colors.black,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.max,
+              children: <Widget>[
+                Visibility(
+                  visible: _progressVisibility,
+                  child: LinearProgressIndicator(
+                    backgroundColor: Colors.red,
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: _progressVisibility
+                      ? null
+                      : () async {
+                          _saveVideo().then((outputPath) {
+                            if (outputPath != null && outputPath.isNotEmpty) {
+                              // Update the video file with the trimmed version
+                              _videoFile = File(outputPath);
+
+                              // Reload the trimmer with the new file
+                              _trimmer.loadVideo(videoFile: _videoFile!);
+
+                              if (context.mounted) {
+                                showSnackBar(
+                                    context, 'Video trimmed successfully!');
+                                setState(() {
+                                  _isPreviewingVideo = false;
+                                  _isVideo = true;
+                                });
+                              }
+                            } else {
+                              if (context.mounted) {
+                                showSnackBar(context, 'Failed to trim video');
+                              }
+                            }
+                          });
+                        },
+                  child: Text("SAVE", style: TextStyle(color: primaryColor)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: blueColor,
+                  ),
+                ),
+                Expanded(
+                  child: VideoViewer(trimmer: _trimmer),
+                ),
+                Center(
+                  child: TrimViewer(
+                    trimmer: _trimmer,
+                    viewerHeight: 50.0,
+                    viewerWidth: MediaQuery.of(context).size.width,
+                    maxVideoLength: const Duration(seconds: 30),
+                    onChangeStart: (value) =>
+                        setState(() => _startValue = value),
+                    onChangeEnd: (value) => setState(() => _endValue = value),
+                    onChangePlaybackState: (value) =>
+                        setState(() => _isPlaying = value),
+                  ),
+                ),
+                TextButton(
+                  child: _isPlaying
+                      ? Icon(
+                          Icons.pause,
+                          size: 80.0,
+                          color: Colors.white,
+                        )
+                      : Icon(
+                          Icons.play_arrow,
+                          size: 80.0,
+                          color: Colors.white,
+                        ),
+                  onPressed: _toggleVideoPlayback,
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -528,6 +460,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
       _isVideo = false;
       _isPreviewingVideo = false;
       _isPlaying = false;
+      _progressVisibility = false;
     });
   }
 
@@ -543,6 +476,11 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
     final String photoUrl = user.photoUrl ?? '';
 
+    // If we're previewing video, show the trimmer interface
+    if (_isPreviewingVideo) {
+      return _buildVideoTrimmer();
+    }
+
     return Scaffold(
       appBar: AppBar(
         iconTheme: IconThemeData(color: primaryColor),
@@ -556,7 +494,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
         ),
         title: Text('Ratedly', style: TextStyle(color: primaryColor)),
         actions: [
-          if (!_isPreviewingVideo && (_file != null || _videoFile != null))
+          if (_file != null || _videoFile != null)
             TextButton(
               onPressed: () => postMedia(user),
               child: Text(
@@ -570,7 +508,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
             ),
         ],
       ),
-      body: _file == null && _videoFile == null && !_isPreviewingVideo
+      body: _file == null && _videoFile == null
           ? Center(
               child: IconButton(
                 icon: Icon(Icons.upload, color: primaryColor, size: 50),
@@ -585,57 +523,45 @@ class _AddPostScreenState extends State<AddPostScreen> {
                       color: primaryColor,
                       backgroundColor: primaryColor.withOpacity(0.2),
                     ),
-                  if (_isPreviewingVideo)
-                    _buildVideoTrimmer()
-                  else
-                    Container(
-                      height: MediaQuery.of(context).size.height * 0.5,
-                      decoration: _isVideo
-                          ? BoxDecoration(
-                              color: Colors.black,
-                              border: Border.all(color: primaryColor),
-                            )
-                          : BoxDecoration(
-                              image: DecorationImage(
-                                image: MemoryImage(_file!),
-                                fit: BoxFit.cover,
-                              ),
+                  Container(
+                    height: MediaQuery.of(context).size.height * 0.5,
+                    decoration: _isVideo
+                        ? BoxDecoration(
+                            color: Colors.black,
+                            border: Border.all(color: primaryColor),
+                          )
+                        : BoxDecoration(
+                            image: DecorationImage(
+                              image: MemoryImage(_file!),
+                              fit: BoxFit.cover,
                             ),
-                      child: _isVideo
-                          ? Stack(
-                              children: [
-                                // Use VideoViewer for consistent video playback
-                                AspectRatio(
-                                  aspectRatio: 16 / 9,
-                                  child: VideoViewer(trimmer: _trimmer),
-                                ),
-                                Positioned.fill(
-                                  child: Align(
-                                    alignment: Alignment.center,
-                                    child: IconButton(
-                                      icon: Icon(
-                                        Icons.play_arrow,
-                                        size: 50,
-                                        color: Colors.white.withOpacity(0.8),
-                                      ),
-                                      onPressed: () async {
-                                        bool playbackState =
-                                            await _trimmer.videoPlaybackControl(
-                                          startValue: 0.0,
-                                          endValue: 30.0,
-                                        );
-                                        setState(() {
-                                          _isPlaying = playbackState;
-                                        });
-                                      },
+                          ),
+                    child: _isVideo
+                        ? Stack(
+                            children: [
+                              // Use VideoViewer for consistent video playback
+                              AspectRatio(
+                                aspectRatio: 16 / 9,
+                                child: VideoViewer(trimmer: _trimmer),
+                              ),
+                              Positioned.fill(
+                                child: Align(
+                                  alignment: Alignment.center,
+                                  child: IconButton(
+                                    icon: Icon(
+                                      Icons.play_arrow,
+                                      size: 50,
+                                      color: Colors.white.withOpacity(0.8),
                                     ),
+                                    onPressed: _toggleVideoPlayback,
                                   ),
                                 ),
-                              ],
-                            )
-                          : null,
-                    ),
-                  if (!_isVideo && !_isPreviewingVideo)
+                              ),
+                            ],
+                          )
+                        : null,
+                  ),
+                  if (!_isVideo)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
                       child: ElevatedButton(
@@ -666,40 +592,39 @@ class _AddPostScreenState extends State<AddPostScreen> {
                         child: const Text('Edit Photo'),
                       ),
                     ),
-                  if (!_isPreviewingVideo)
-                    Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 21,
-                            backgroundColor: Colors.transparent,
-                            backgroundImage:
-                                (photoUrl.isNotEmpty && photoUrl != "default")
-                                    ? NetworkImage(photoUrl)
-                                    : null,
-                            child: (photoUrl.isEmpty || photoUrl == "default")
-                                ? Icon(Icons.account_circle,
-                                    size: 42, color: primaryColor)
-                                : null,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: _descriptionController,
-                              decoration: InputDecoration(
-                                hintText: "Write a caption...",
-                                hintStyle: TextStyle(
-                                    color: primaryColor.withOpacity(0.6)),
-                                border: InputBorder.none,
-                              ),
-                              style: TextStyle(color: primaryColor),
-                              maxLines: 3,
+                  Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 21,
+                          backgroundColor: Colors.transparent,
+                          backgroundImage:
+                              (photoUrl.isNotEmpty && photoUrl != "default")
+                                  ? NetworkImage(photoUrl)
+                                  : null,
+                          child: (photoUrl.isEmpty || photoUrl == "default")
+                              ? Icon(Icons.account_circle,
+                                  size: 42, color: primaryColor)
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _descriptionController,
+                            decoration: InputDecoration(
+                              hintText: "Write a caption...",
+                              hintStyle: TextStyle(
+                                  color: primaryColor.withOpacity(0.6)),
+                              border: InputBorder.none,
                             ),
+                            style: TextStyle(color: primaryColor),
+                            maxLines: 3,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),
