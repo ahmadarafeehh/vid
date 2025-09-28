@@ -520,29 +520,52 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     child: _isVideo
                         ? Stack(
                             children: [
-                              AspectRatio(
-                                aspectRatio: 16 / 9,
-                                child: VideoViewer(trimmer: _trimmer),
-                              ),
-                              Positioned.fill(
-                                child: Align(
-                                  alignment: Alignment.center,
-                                  child: IconButton(
-                                    icon: Icon(
-                                      Icons.play_arrow,
-                                      size: 50,
-                                      color: Colors.white.withOpacity(0.8),
+                              // Replace VideoViewer with simple thumbnail
+                              Container(
+                                width: double.infinity,
+                                color: Colors.black,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.videocam,
+                                      size: 80,
+                                      color: Colors.white.withOpacity(0.7),
                                     ),
-                                    onPressed: () async {
-                                      bool playbackState =
-                                          await _trimmer.videoPlaybackControl(
-                                        startValue: 0.0,
-                                        endValue: 30.0,
-                                      );
-                                      setState(() {
-                                        _isPlaying = playbackState;
-                                      });
-                                    },
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'Video Ready to Post',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Tap "Post" to share your video',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.7),
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Optional: Add a small play button indicator
+                              Positioned(
+                                bottom: 16,
+                                right: 16,
+                                child: Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.7),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.play_arrow,
+                                    color: Colors.white,
+                                    size: 24,
                                   ),
                                 ),
                               ),
