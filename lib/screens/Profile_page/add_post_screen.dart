@@ -254,6 +254,13 @@ class _AddPostScreenState extends State<AddPostScreen> {
                               // Update the video file with the trimmed version
                               _videoFile = File(outputPath);
 
+                              // RELOAD THE TRIMMER WITH THE NEW TRIMMED VIDEO
+                              _trimmer.loadVideo(videoFile: _videoFile!);
+
+                              // Reset trim values to show the entire trimmed video
+                              _startValue = 0.0;
+                              _endValue = 0.0;
+
                               if (context.mounted) {
                                 showSnackBar(
                                     context, 'Video trimmed successfully!');
@@ -506,73 +513,90 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     ),
                   Container(
                     height: MediaQuery.of(context).size.height * 0.5,
-                    decoration: _isVideo
-                        ? BoxDecoration(
-                            color: Colors.black,
-                            border: Border.all(color: primaryColor),
-                          )
-                        : BoxDecoration(
-                            image: DecorationImage(
-                              image: MemoryImage(_file!),
-                              fit: BoxFit.cover,
-                            ),
-                          ),
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      border: Border.all(color: primaryColor),
+                    ),
                     child: _isVideo
                         ? Stack(
+                            fit: StackFit.expand,
                             children: [
-                              // Replace VideoViewer with simple thumbnail
-                              Container(
-                                width: double.infinity,
-                                color: Colors.black,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.videocam,
-                                      size: 80,
-                                      color: Colors.white.withOpacity(0.7),
-                                    ),
-                                    SizedBox(height: 16),
-                                    Text(
-                                      'Video Ready to Post',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Tap "Post" to share your video',
-                                      style: TextStyle(
-                                        color: Colors.white.withOpacity(0.7),
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Optional: Add a small play button indicator
-                              Positioned(
-                                bottom: 16,
-                                right: 16,
-                                child: Container(
-                                  padding: EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.7),
-                                    shape: BoxShape.circle,
-                                  ),
+                              // Show video thumbnail using VideoViewer for preview
+                              VideoViewer(trimmer: _trimmer),
+                              // Play button overlay
+                              Positioned.fill(
+                                child: Center(
                                   child: Icon(
-                                    Icons.play_arrow,
-                                    color: Colors.white,
-                                    size: 24,
+                                    Icons.play_circle_filled,
+                                    size: 60,
+                                    color: Colors.white.withOpacity(0.7),
                                   ),
                                 ),
                               ),
                             ],
                           )
-                        : null,
+                        : Image.memory(
+                            _file!,
+                            fit: BoxFit.cover,
+                          ),
                   ),
+                  if (_isVideo)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: blueColor,
+                              foregroundColor: primaryColor,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isPreviewingVideo = true;
+                              });
+                            },
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit, size: 16),
+                                SizedBox(width: 4),
+                                Text('Edit/Trim'),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: blueColor,
+                              foregroundColor: primaryColor,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                            ),
+                            onPressed: () async {
+                              bool playbackState =
+                                  await _trimmer.videoPlaybackControl(
+                                startValue: _startValue,
+                                endValue: _endValue,
+                              );
+                              setState(() {
+                                _isPlaying = playbackState;
+                              });
+                            },
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _isPlaying ? Icons.pause : Icons.play_arrow,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(_isPlaying ? 'Pause' : 'Preview'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (!_isVideo)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
