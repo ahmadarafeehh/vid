@@ -30,9 +30,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
   final double _maxFileSize = 2.5 * 1024 * 1024;
   final double _maxVideoSize = 50 * 1024 * 1024;
 
-  // Video trimming variables for older version with onSave
+  // Video trimming variables
   final Trimmer _trimmer = Trimmer();
-  bool _isPreviewingVideo = false;
+  bool _isTrimming = false;
   double _startValue = 0.0;
   double _endValue = 0.0;
   bool _isPlaying = false;
@@ -90,7 +90,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
       setState(() {
         _isVideo = false;
         isLoading = true;
-        _isPreviewingVideo = false;
+        _isTrimming = false;
         _videoFile = null;
       });
 
@@ -144,7 +144,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
       setState(() {
         _isVideo = true;
         isLoading = true;
-        _isPreviewingVideo = false;
+        _isTrimming = false;
         _file = null;
       });
 
@@ -173,7 +173,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
         _loadVideo();
 
         setState(() {
-          _isPreviewingVideo = true;
+          _isTrimming = true;
           isLoading = false;
         });
       } else {
@@ -193,13 +193,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
-  // Using the exact pattern from blog post with onSave parameter
-  Future<String?> _saveVideo() async {
+  Future<String?> _trimVideo() async {
     setState(() {
       _progressVisibility = true;
     });
 
-    String? _value;
+    String? trimmedPath;
 
     await _trimmer.saveTrimmedVideo(
       startValue: _startValue,
@@ -207,124 +206,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
       onSave: (String? value) {
         setState(() {
           _progressVisibility = false;
-          _value = value;
+          trimmedPath = value;
         });
       },
     );
 
-    return _value;
-  }
-
-  Widget _buildVideoTrimmer() {
-    return Scaffold(
-      appBar: AppBar(
-        iconTheme: IconThemeData(color: primaryColor),
-        backgroundColor: mobileBackgroundColor,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: primaryColor),
-          onPressed: () {
-            setState(() {
-              _isPreviewingVideo = false;
-            });
-          },
-        ),
-        title: Text('Trim Video', style: TextStyle(color: primaryColor)),
-      ),
-      body: Builder(
-        builder: (context) => Center(
-          child: Container(
-            padding: EdgeInsets.only(bottom: 30.0),
-            color: Colors.black,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.max,
-              children: <Widget>[
-                Visibility(
-                  visible: _progressVisibility,
-                  child: LinearProgressIndicator(
-                    backgroundColor: Colors.red,
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: _progressVisibility
-                      ? null
-                      : () async {
-                          _saveVideo().then((outputPath) {
-                            if (outputPath != null && outputPath.isNotEmpty) {
-                              // Update the video file with the trimmed version
-                              _videoFile = File(outputPath);
-
-                              // RELOAD THE TRIMMER WITH THE NEW TRIMMED VIDEO
-                              _trimmer.loadVideo(videoFile: _videoFile!);
-
-                              // Reset trim values to show the entire trimmed video
-                              _startValue = 0.0;
-                              _endValue = 0.0;
-
-                              if (context.mounted) {
-                                showSnackBar(
-                                    context, 'Video trimmed successfully!');
-                                setState(() {
-                                  _isPreviewingVideo = false;
-                                  _isVideo = true;
-                                });
-                              }
-                            } else {
-                              if (context.mounted) {
-                                showSnackBar(context, 'Failed to trim video');
-                              }
-                            }
-                          });
-                        },
-                  child: Text("SAVE", style: TextStyle(color: primaryColor)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: blueColor,
-                  ),
-                ),
-                Expanded(
-                  child: VideoViewer(trimmer: _trimmer),
-                ),
-                Center(
-                  child: TrimViewer(
-                    trimmer: _trimmer,
-                    viewerHeight: 50.0,
-                    viewerWidth: MediaQuery.of(context).size.width,
-                    maxVideoLength: const Duration(seconds: 30),
-                    onChangeStart: (value) => _startValue = value,
-                    onChangeEnd: (value) => _endValue = value,
-                    onChangePlaybackState: (value) =>
-                        setState(() => _isPlaying = value),
-                  ),
-                ),
-                TextButton(
-                  child: _isPlaying
-                      ? Icon(
-                          Icons.pause,
-                          size: 80.0,
-                          color: Colors.white,
-                        )
-                      : Icon(
-                          Icons.play_arrow,
-                          size: 80.0,
-                          color: Colors.white,
-                        ),
-                  onPressed: () async {
-                    // Using the exact pattern from blog post
-                    bool playbackState = await _trimmer.videoPlaybackControl(
-                      startValue: _startValue,
-                      endValue: _endValue,
-                    );
-                    setState(() {
-                      _isPlaying = playbackState;
-                    });
-                  },
-                )
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    return trimmedPath;
   }
 
   Future<Uint8List?> _compressUntilUnderLimit(Uint8List imageBytes) async {
@@ -383,28 +270,29 @@ class _AddPostScreenState extends State<AddPostScreen> {
       return;
     }
 
-    if (!_isVideo && _file!.length > _maxFileSize) {
-      if (context.mounted) {
-        showSnackBar(context,
-            "Image too large (max 2.5MB). Please choose a smaller image.");
-      }
-      return;
-    }
-
-    if (_isVideo && (await _videoFile!.length()) > _maxVideoSize) {
-      if (context.mounted) {
-        showSnackBar(context,
-            "Video too large (max 50MB). Please choose a shorter video.");
-      }
-      return;
-    }
-
     setState(() => isLoading = true);
 
     try {
       final String res;
 
       if (_isVideo) {
+        // If we're in trimming mode, trim the video first
+        if (_isTrimming) {
+          setState(() => _progressVisibility = true);
+          final String? trimmedPath = await _trimVideo();
+          setState(() => _progressVisibility = false);
+
+          if (trimmedPath == null) {
+            if (context.mounted) {
+              showSnackBar(context, 'Failed to trim video');
+            }
+            setState(() => isLoading = false);
+            return;
+          }
+
+          _videoFile = File(trimmedPath);
+        }
+
         res = await SupabasePostsMethods().uploadVideoPostFromFile(
           _descriptionController.text,
           _videoFile!,
@@ -447,42 +335,28 @@ class _AddPostScreenState extends State<AddPostScreen> {
       _file = null;
       _videoFile = null;
       _isVideo = false;
-      _isPreviewingVideo = false;
+      _isTrimming = false;
       _isPlaying = false;
       _progressVisibility = false;
+      _descriptionController.clear();
     });
   }
 
-  @override
-Widget build(BuildContext context) {
-  final user = Provider.of<UserProvider>(context).user;
-
-  if (user == null) {
+  Widget _buildVideoTrimmer(AppUser user) {
     return Scaffold(
-      body: Center(child: CircularProgressIndicator(color: primaryColor)),
-    );
-  }
-
-  final String photoUrl = user.photoUrl ?? '';
-
-  if (_isPreviewingVideo) {
-    return _buildVideoTrimmer();
-  }
-
-  return Scaffold(
-    appBar: AppBar(
-      iconTheme: IconThemeData(color: primaryColor),
-      backgroundColor: mobileBackgroundColor,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: primaryColor),
-        onPressed: () {
-          clearMedia();
-          Navigator.pop(context);
-        },
-      ),
-      title: Text('Ratedly', style: TextStyle(color: primaryColor)),
-      actions: [
-        if (_file != null || _videoFile != null)
+      appBar: AppBar(
+        iconTheme: IconThemeData(color: primaryColor),
+        backgroundColor: mobileBackgroundColor,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: primaryColor),
+          onPressed: () {
+            setState(() {
+              _isTrimming = false;
+            });
+          },
+        ),
+        title: Text('Trim Video', style: TextStyle(color: primaryColor)),
+        actions: [
           TextButton(
             onPressed: () => postMedia(user),
             child: Text(
@@ -494,151 +368,290 @@ Widget build(BuildContext context) {
               ),
             ),
           ),
-      ],
-    ),
-    body: _file == null && _videoFile == null
-        ? Center(
-            child: IconButton(
-              icon: Icon(Icons.upload, color: primaryColor, size: 50),
-              onPressed: () => _selectMedia(context),
-            ),
-          )
-        : SingleChildScrollView(
-            child: Column(
-              children: [
-                if (isLoading)
-                  LinearProgressIndicator(
-                    color: primaryColor,
-                    backgroundColor: primaryColor.withOpacity(0.2),
-                  ),
-                Container(
-                  height: MediaQuery.of(context).size.height * 0.5,
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    border: Border.all(color: primaryColor),
-                  ),
-                  child: _isVideo
-                      ? Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            // Show video thumbnail - ensure first frame is displayed
-                            VideoViewer(trimmer: _trimmer),
-                            // Play button that acts as back button
-                            Positioned.fill(
-                              child: Center(
-                                child: IconButton(
-                                  icon: Icon(
-                                    Icons.play_circle_filled,
-                                    size: 60,
-                                    color: Colors.white.withOpacity(0.8),
-                                  ),
-                                  onPressed: () {
-                                    // Acts as back button - goes back to trimmer
-                                    setState(() {
-                                      _isPreviewingVideo = true;
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                            // Video indicator in corner
-                            Positioned(
-                              top: 16,
-                              right: 16,
-                              child: Container(
-                                padding: EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.7),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.videocam, 
-                                         color: Colors.white, 
-                                         size: 16),
-                                    SizedBox(width: 4),
-                                    Text('Video',
-                                        style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      : Image.memory(
-                          _file!,
-                          fit: BoxFit.cover,
-                        ),
-                ),
-                if (!_isVideo)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: blueColor,
-                        foregroundColor: primaryColor,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 12),
-                      ),
-                      onPressed: () => showDialog<void>(
-                        context: context,
-                        builder: (context) => SimpleDialog(
-                          title: Text('Edit Image',
-                              style: TextStyle(color: primaryColor)),
-                          backgroundColor: mobileBackgroundColor,
-                          children: [
-                            SimpleDialogOption(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _rotateImage();
-                              },
-                              child: Text('Rotate 90°',
-                                  style: TextStyle(color: primaryColor)),
-                            ),
-                          ],
-                        ),
-                      ),
-                      child: const Text('Edit Photo'),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Video Trimmer Section
+          Expanded(
+            child: Container(
+              padding: EdgeInsets.only(bottom: 16.0),
+              color: Colors.black,
+              child: Column(
+                children: <Widget>[
+                  Visibility(
+                    visible: _progressVisibility,
+                    child: LinearProgressIndicator(
+                      backgroundColor: Colors.red,
                     ),
                   ),
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 21,
-                        backgroundColor: Colors.transparent,
-                        backgroundImage:
-                            (photoUrl.isNotEmpty && photoUrl != "default")
-                                ? NetworkImage(photoUrl)
-                                : null,
-                        child: (photoUrl.isEmpty || photoUrl == "default")
-                            ? Icon(Icons.account_circle,
-                                size: 42, color: primaryColor)
-                            : null,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _descriptionController,
-                          decoration: InputDecoration(
-                            hintText: "Write a caption...",
-                            hintStyle: TextStyle(
-                                color: primaryColor.withOpacity(0.6)),
-                            border: InputBorder.none,
+                  Expanded(
+                    child: VideoViewer(trimmer: _trimmer),
+                  ),
+                  Center(
+                    child: TrimViewer(
+                      trimmer: _trimmer,
+                      viewerHeight: 50.0,
+                      viewerWidth: MediaQuery.of(context).size.width,
+                      maxVideoLength: const Duration(seconds: 30),
+                      onChangeStart: (value) => _startValue = value,
+                      onChangeEnd: (value) => _endValue = value,
+                      onChangePlaybackState: (value) =>
+                          setState(() => _isPlaying = value),
+                    ),
+                  ),
+                  TextButton(
+                    child: _isPlaying
+                        ? Icon(
+                            Icons.pause,
+                            size: 80.0,
+                            color: Colors.white,
+                          )
+                        : Icon(
+                            Icons.play_arrow,
+                            size: 80.0,
+                            color: Colors.white,
                           ),
-                          style: TextStyle(color: primaryColor),
-                          maxLines: 3,
-                        ),
-                      ),
-                    ],
+                    onPressed: () async {
+                      bool playbackState = await _trimmer.videoPlaybackControl(
+                        startValue: _startValue,
+                        endValue: _endValue,
+                      );
+                      setState(() {
+                        _isPlaying = playbackState;
+                      });
+                    },
+                  ),
+                  SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+
+          // Caption Input Section
+          Container(
+            color: mobileBackgroundColor,
+            padding: EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.transparent,
+                  backgroundImage: (user.photoUrl?.isNotEmpty == true &&
+                          user.photoUrl != "default")
+                      ? NetworkImage(user.photoUrl!)
+                      : null,
+                  child: (user.photoUrl?.isEmpty == true ||
+                          user.photoUrl == "default")
+                      ? Icon(Icons.account_circle,
+                          size: 40, color: primaryColor)
+                      : null,
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _descriptionController,
+                    decoration: InputDecoration(
+                      hintText: "Write a caption...",
+                      hintStyle:
+                          TextStyle(color: primaryColor.withOpacity(0.6)),
+                      border: InputBorder.none,
+                      contentPadding:
+                          EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    ),
+                    style: TextStyle(color: primaryColor),
+                    maxLines: 3,
                   ),
                 ),
               ],
             ),
           ),
-  );
-}
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = Provider.of<UserProvider>(context).user;
+
+    if (user == null) {
+      return Scaffold(
+        body: Center(child: CircularProgressIndicator(color: primaryColor)),
+      );
+    }
+
+    // If we're trimming a video, show the trimmer interface
+    if (_isTrimming) {
+      return _buildVideoTrimmer(user);
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        iconTheme: IconThemeData(color: primaryColor),
+        backgroundColor: mobileBackgroundColor,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: primaryColor),
+          onPressed: () {
+            clearMedia();
+            Navigator.pop(context);
+          },
+        ),
+        title: Text('Ratedly', style: TextStyle(color: primaryColor)),
+        actions: [
+          if (_file != null || _videoFile != null)
+            TextButton(
+              onPressed: () => postMedia(user),
+              child: Text(
+                "Post",
+                style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16.0,
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: _file == null && _videoFile == null
+          ? Center(
+              child: IconButton(
+                icon: Icon(Icons.upload, color: primaryColor, size: 50),
+                onPressed: () => _selectMedia(context),
+              ),
+            )
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  if (isLoading)
+                    LinearProgressIndicator(
+                      color: primaryColor,
+                      backgroundColor: primaryColor.withOpacity(0.2),
+                    ),
+                  Container(
+                    height: MediaQuery.of(context).size.height * 0.5,
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      border: Border.all(color: primaryColor),
+                    ),
+                    child: _isVideo
+                        ? Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              VideoViewer(trimmer: _trimmer),
+                              Positioned.fill(
+                                child: Center(
+                                  child: Icon(
+                                    Icons.play_circle_filled,
+                                    size: 60,
+                                    color: Colors.white.withOpacity(0.7),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Image.memory(
+                            _file!,
+                            fit: BoxFit.cover,
+                          ),
+                  ),
+                  if (_isVideo)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: blueColor,
+                              foregroundColor: primaryColor,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isTrimming = true;
+                              });
+                            },
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit, size: 16),
+                                SizedBox(width: 4),
+                                Text('Trim Video'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (!_isVideo)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: blueColor,
+                          foregroundColor: primaryColor,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
+                        ),
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          builder: (context) => SimpleDialog(
+                            title: Text('Edit Image',
+                                style: TextStyle(color: primaryColor)),
+                            backgroundColor: mobileBackgroundColor,
+                            children: [
+                              SimpleDialogOption(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _rotateImage();
+                                },
+                                child: Text('Rotate 90°',
+                                    style: TextStyle(color: primaryColor)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        child: const Text('Edit Photo'),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 21,
+                          backgroundColor: Colors.transparent,
+                          backgroundImage: (user.photoUrl?.isNotEmpty == true &&
+                                  user.photoUrl != "default")
+                              ? NetworkImage(user.photoUrl!)
+                              : null,
+                          child: (user.photoUrl?.isEmpty == true ||
+                                  user.photoUrl == "default")
+                              ? Icon(Icons.account_circle,
+                                  size: 42, color: primaryColor)
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _descriptionController,
+                            decoration: InputDecoration(
+                              hintText: "Write a caption...",
+                              hintStyle: TextStyle(
+                                  color: primaryColor.withOpacity(0.6)),
+                              border: InputBorder.none,
+                            ),
+                            style: TextStyle(color: primaryColor),
+                            maxLines: 3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
 }
