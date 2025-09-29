@@ -454,216 +454,191 @@ class _AddPostScreenState extends State<AddPostScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final user = Provider.of<UserProvider>(context).user;
+Widget build(BuildContext context) {
+  final user = Provider.of<UserProvider>(context).user;
 
-    if (user == null) {
-      return Scaffold(
-        body: Center(child: CircularProgressIndicator(color: primaryColor)),
-      );
-    }
-
-    final String photoUrl = user.photoUrl ?? '';
-
-    if (_isPreviewingVideo) {
-      return _buildVideoTrimmer();
-    }
-
+  if (user == null) {
     return Scaffold(
-      appBar: AppBar(
-        iconTheme: IconThemeData(color: primaryColor),
-        backgroundColor: mobileBackgroundColor,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: primaryColor),
-          onPressed: () {
-            clearMedia();
-            Navigator.pop(context);
-          },
-        ),
-        title: Text('Ratedly', style: TextStyle(color: primaryColor)),
-        actions: [
-          if (_file != null || _videoFile != null)
-            TextButton(
-              onPressed: () => postMedia(user),
-              child: Text(
-                "Post",
-                style: TextStyle(
-                  color: primaryColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16.0,
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: _file == null && _videoFile == null
-          ? Center(
-              child: IconButton(
-                icon: Icon(Icons.upload, color: primaryColor, size: 50),
-                onPressed: () => _selectMedia(context),
-              ),
-            )
-          : SingleChildScrollView(
-              child: Column(
-                children: [
-                  if (isLoading)
-                    LinearProgressIndicator(
-                      color: primaryColor,
-                      backgroundColor: primaryColor.withOpacity(0.2),
-                    ),
-                  Container(
-                    height: MediaQuery.of(context).size.height * 0.5,
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      border: Border.all(color: primaryColor),
-                    ),
-                    child: _isVideo
-                        ? Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              // Show video thumbnail using VideoViewer for preview
-                              VideoViewer(trimmer: _trimmer),
-                              // Play button overlay
-                              Positioned.fill(
-                                child: Center(
-                                  child: Icon(
-                                    Icons.play_circle_filled,
-                                    size: 60,
-                                    color: Colors.white.withOpacity(0.7),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        : Image.memory(
-                            _file!,
-                            fit: BoxFit.cover,
-                          ),
-                  ),
-                  if (_isVideo)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: blueColor,
-                              foregroundColor: primaryColor,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _isPreviewingVideo = true;
-                              });
-                            },
-                            child: Row(
-                              children: [
-                                Icon(Icons.edit, size: 16),
-                                SizedBox(width: 4),
-                                Text('Edit/Trim'),
-                              ],
-                            ),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: blueColor,
-                              foregroundColor: primaryColor,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                            ),
-                            onPressed: () async {
-                              bool playbackState =
-                                  await _trimmer.videoPlaybackControl(
-                                startValue: _startValue,
-                                endValue: _endValue,
-                              );
-                              setState(() {
-                                _isPlaying = playbackState;
-                              });
-                            },
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _isPlaying ? Icons.pause : Icons.play_arrow,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 4),
-                                Text(_isPlaying ? 'Pause' : 'Preview'),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (!_isVideo)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: blueColor,
-                          foregroundColor: primaryColor,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 12),
-                        ),
-                        onPressed: () => showDialog<void>(
-                          context: context,
-                          builder: (context) => SimpleDialog(
-                            title: Text('Edit Image',
-                                style: TextStyle(color: primaryColor)),
-                            backgroundColor: mobileBackgroundColor,
-                            children: [
-                              SimpleDialogOption(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _rotateImage();
-                                },
-                                child: Text('Rotate 90°',
-                                    style: TextStyle(color: primaryColor)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        child: const Text('Edit Photo'),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 21,
-                          backgroundColor: Colors.transparent,
-                          backgroundImage:
-                              (photoUrl.isNotEmpty && photoUrl != "default")
-                                  ? NetworkImage(photoUrl)
-                                  : null,
-                          child: (photoUrl.isEmpty || photoUrl == "default")
-                              ? Icon(Icons.account_circle,
-                                  size: 42, color: primaryColor)
-                              : null,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _descriptionController,
-                            decoration: InputDecoration(
-                              hintText: "Write a caption...",
-                              hintStyle: TextStyle(
-                                  color: primaryColor.withOpacity(0.6)),
-                              border: InputBorder.none,
-                            ),
-                            style: TextStyle(color: primaryColor),
-                            maxLines: 3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      body: Center(child: CircularProgressIndicator(color: primaryColor)),
     );
   }
+
+  final String photoUrl = user.photoUrl ?? '';
+
+  if (_isPreviewingVideo) {
+    return _buildVideoTrimmer();
+  }
+
+  return Scaffold(
+    appBar: AppBar(
+      iconTheme: IconThemeData(color: primaryColor),
+      backgroundColor: mobileBackgroundColor,
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back, color: primaryColor),
+        onPressed: () {
+          clearMedia();
+          Navigator.pop(context);
+        },
+      ),
+      title: Text('Ratedly', style: TextStyle(color: primaryColor)),
+      actions: [
+        if (_file != null || _videoFile != null)
+          TextButton(
+            onPressed: () => postMedia(user),
+            child: Text(
+              "Post",
+              style: TextStyle(
+                color: primaryColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 16.0,
+              ),
+            ),
+          ),
+      ],
+    ),
+    body: _file == null && _videoFile == null
+        ? Center(
+            child: IconButton(
+              icon: Icon(Icons.upload, color: primaryColor, size: 50),
+              onPressed: () => _selectMedia(context),
+            ),
+          )
+        : SingleChildScrollView(
+            child: Column(
+              children: [
+                if (isLoading)
+                  LinearProgressIndicator(
+                    color: primaryColor,
+                    backgroundColor: primaryColor.withOpacity(0.2),
+                  ),
+                Container(
+                  height: MediaQuery.of(context).size.height * 0.5,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    border: Border.all(color: primaryColor),
+                  ),
+                  child: _isVideo
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Show video thumbnail - ensure first frame is displayed
+                            VideoViewer(trimmer: _trimmer),
+                            // Play button that acts as back button
+                            Positioned.fill(
+                              child: Center(
+                                child: IconButton(
+                                  icon: Icon(
+                                    Icons.play_circle_filled,
+                                    size: 60,
+                                    color: Colors.white.withOpacity(0.8),
+                                  ),
+                                  onPressed: () {
+                                    // Acts as back button - goes back to trimmer
+                                    setState(() {
+                                      _isPreviewingVideo = true;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            // Video indicator in corner
+                            Positioned(
+                              top: 16,
+                              right: 16,
+                              child: Container(
+                                padding: EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.7),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.videocam, 
+                                         color: Colors.white, 
+                                         size: 16),
+                                    SizedBox(width: 4),
+                                    Text('Video',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Image.memory(
+                          _file!,
+                          fit: BoxFit.cover,
+                        ),
+                ),
+                if (!_isVideo)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: blueColor,
+                        foregroundColor: primaryColor,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
+                      ),
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (context) => SimpleDialog(
+                          title: Text('Edit Image',
+                              style: TextStyle(color: primaryColor)),
+                          backgroundColor: mobileBackgroundColor,
+                          children: [
+                            SimpleDialogOption(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _rotateImage();
+                              },
+                              child: Text('Rotate 90°',
+                                  style: TextStyle(color: primaryColor)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      child: const Text('Edit Photo'),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 21,
+                        backgroundColor: Colors.transparent,
+                        backgroundImage:
+                            (photoUrl.isNotEmpty && photoUrl != "default")
+                                ? NetworkImage(photoUrl)
+                                : null,
+                        child: (photoUrl.isEmpty || photoUrl == "default")
+                            ? Icon(Icons.account_circle,
+                                size: 42, color: primaryColor)
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _descriptionController,
+                          decoration: InputDecoration(
+                            hintText: "Write a caption...",
+                            hintStyle: TextStyle(
+                                color: primaryColor.withOpacity(0.6)),
+                            border: InputBorder.none,
+                          ),
+                          style: TextStyle(color: primaryColor),
+                          maxLines: 3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+  );
+}
 }
