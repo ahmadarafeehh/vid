@@ -354,8 +354,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
         backgroundColor: mobileBackgroundColor,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: primaryColor),
-          onPressed: () {
-            // Go directly back to profile when back button is pressed
+          onPressed: isLoading ? null : () {
             clearMedia();
             Navigator.pop(context);
           },
@@ -363,11 +362,11 @@ class _AddPostScreenState extends State<AddPostScreen> {
         title: Text('Trim Video', style: TextStyle(color: primaryColor)),
         actions: [
           TextButton(
-            onPressed: () => postMedia(user),
+            onPressed: isLoading ? null : () => postMedia(user),
             child: Text(
               "Post",
               style: TextStyle(
-                color: primaryColor,
+                color: isLoading ? primaryColor.withOpacity(0.5) : primaryColor,
                 fontWeight: FontWeight.bold,
                 fontSize: 16.0,
               ),
@@ -385,7 +384,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
               child: Column(
                 children: <Widget>[
                   Visibility(
-                    visible: _progressVisibility,
+                    visible: _progressVisibility || isLoading,
                     child: LinearProgressIndicator(
                       backgroundColor: Colors.red,
                     ),
@@ -394,15 +393,18 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     child: VideoViewer(trimmer: _trimmer),
                   ),
                   Center(
-                    child: TrimViewer(
-                      trimmer: _trimmer,
-                      viewerHeight: 50.0,
-                      viewerWidth: MediaQuery.of(context).size.width,
-                      maxVideoLength: const Duration(seconds: 30),
-                      onChangeStart: (value) => _startValue = value,
-                      onChangeEnd: (value) => _endValue = value,
-                      onChangePlaybackState: (value) =>
-                          setState(() => _isPlaying = value),
+                    child: AbsorbPointer(
+                      absorbing: isLoading,
+                      child: TrimViewer(
+                        trimmer: _trimmer,
+                        viewerHeight: 50.0,
+                        viewerWidth: MediaQuery.of(context).size.width,
+                        maxVideoLength: const Duration(seconds: 30),
+                        onChangeStart: (value) => _startValue = value,
+                        onChangeEnd: (value) => _endValue = value,
+                        onChangePlaybackState: (value) =>
+                            setState(() => _isPlaying = value),
+                      ),
                     ),
                   ),
                   TextButton(
@@ -410,14 +412,14 @@ class _AddPostScreenState extends State<AddPostScreen> {
                         ? Icon(
                             Icons.pause,
                             size: 80.0,
-                            color: Colors.white,
+                            color: isLoading ? Colors.white.withOpacity(0.5) : Colors.white,
                           )
                         : Icon(
                             Icons.play_arrow,
                             size: 80.0,
-                            color: Colors.white,
+                            color: isLoading ? Colors.white.withOpacity(0.5) : Colors.white,
                           ),
-                    onPressed: () async {
+                    onPressed: isLoading ? null : () async {
                       bool playbackState = await _trimmer.videoPlaybackControl(
                         startValue: _startValue,
                         endValue: _endValue,
@@ -467,10 +469,10 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     ),
                     style: TextStyle(color: primaryColor),
                     maxLines: 3,
+                    enabled: !isLoading,
                   ),
                 ),
                 SizedBox(width: 8),
-                // OK Button to dismiss keyboard
                 if (_captionFocusNode.hasFocus)
                   TextButton(
                     onPressed: _dismissKeyboard,
@@ -522,11 +524,11 @@ class _AddPostScreenState extends State<AddPostScreen> {
           // Only show Post button for images (videos go directly to trimming)
           if (_file != null && !_isVideo)
             TextButton(
-              onPressed: () => postMedia(user),
+              onPressed: isLoading ? null : () => postMedia(user),
               child: Text(
                 "Post",
                 style: TextStyle(
-                  color: primaryColor,
+                  color: isLoading ? primaryColor.withOpacity(0.5) : primaryColor,
                   fontWeight: FontWeight.bold,
                   fontSize: 16.0,
                 ),
@@ -572,7 +574,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 24, vertical: 12),
                         ),
-                        onPressed: () => showDialog<void>(
+                        onPressed: isLoading ? null : () => showDialog<void>(
                           context: context,
                           builder: (context) => SimpleDialog(
                             title: Text('Edit Image',
@@ -623,6 +625,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                             ),
                             style: TextStyle(color: primaryColor),
                             maxLines: 3,
+                            enabled: !isLoading,
                           ),
                         ),
                         SizedBox(width: 8),
