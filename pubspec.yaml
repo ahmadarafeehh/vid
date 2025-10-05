@@ -1,6 +1,6 @@
 name: Ratedly
 description: A new Flutter project.
-version: 1.0.14+42
+version: 1.0.14+43
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -38,15 +38,16 @@ dependencies:
   google_mobile_ads: ^6.0.0
   video_player: ^2.8.2
   video_trimmer: ^5.0.0
+  video_thumbnail: ^0.5.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.2
 
-# Add this dependency_overrides section
-dependency_overrides:
-  path: ^1.9.1
+# REMOVE this dependency_overrides section as it can cause issues
+# dependency_overrides:
+#   path: ^1.9.1
 
 flutter:
   uses-material-design: true
