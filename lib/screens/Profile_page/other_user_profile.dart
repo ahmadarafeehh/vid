@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,7 +15,8 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:Ratedly/services/ads.dart';
 import 'package:Ratedly/utils/theme_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:path_provider/path_provider.dart';
 
 // Define color schemes for both themes at top level
 class _OtherProfileColorSet {
@@ -181,7 +181,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
   }
 
   // -------------------------
-  // Video Player Thumbnail Logic
+  // Improved thumbnail logic
   // -------------------------
 
   /// Public entry point used by UI code. This method:
@@ -218,7 +218,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
     }
 
     // Create a generation future, cache it, and await it
-    final future = _generateThumbnailWithVideoPlayer(videoUrl);
+    final future = _generateThumbnailInternal(videoUrl);
     _thumbnailFutureCache[videoUrl] = future;
 
     final result = await future;
@@ -229,122 +229,68 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
     return result;
   }
 
-  /// Generate thumbnail using video_player package - SIMPLIFIED APPROACH
-  Future<Uint8List?> _generateThumbnailWithVideoPlayer(String videoUrl) async {
-    VideoPlayerController? controller;
+  /// Internal generator: tries thumbnailData first (less file I/O),
+  /// then falls back to thumbnailFile if necessary.
+  Future<Uint8List?> _generateThumbnailInternal(String videoUrl) async {
     try {
-      print('🔄 Generating thumbnail with video_player for: $videoUrl');
+      print('🔄 Generating thumbnailData for: $videoUrl');
 
-      // Create video controller
-      controller = VideoPlayerController.network(videoUrl);
-
-      // Initialize the controller
-      await controller.initialize();
-
-      // Get the video dimensions
-      final videoWidth = controller.value.size.width;
-      final videoHeight = controller.value.size.height;
-
-      if (videoWidth == 0 || videoHeight == 0) {
-        print('❌ Invalid video dimensions for $videoUrl');
-        return null;
-      }
-
-      print('📐 Video dimensions: ${videoWidth}x$videoHeight');
-
-      // Seek to 1 second to get a good frame (avoid black frames at start)
-      await controller.seekTo(Duration(seconds: 1));
-
-      // Wait for the frame to be ready
-      await Future.delayed(Duration(milliseconds: 200));
-
-      // Use VideoPlayer widget to capture the frame
-      final thumbnail = await _captureVideoFrame(controller);
-
-      if (thumbnail != null && thumbnail.isNotEmpty) {
-        _thumbnailCache[videoUrl] = thumbnail;
-        print(
-            '✅ Video player thumbnail succeeded (${thumbnail.length} bytes) for $videoUrl');
-        return thumbnail;
-      }
-
-      print('❌ Video player thumbnail generation failed for $videoUrl');
-      return null;
-    } catch (e, st) {
-      print(
-          '❌ Error generating thumbnail with video_player for $videoUrl: $e\n$st');
-      return null;
-    } finally {
-      // Always dispose the controller
-      controller?.dispose();
-    }
-  }
-
-  /// Capture video frame using VideoPlayer widget and repaint boundary
-  Future<Uint8List?> _captureVideoFrame(
-      VideoPlayerController controller) async {
-    try {
-      // Create a repaint boundary to capture the video frame
-      final repaintBoundary = GlobalKey();
-
-      // Build a widget tree with the video player
-      final widget = MaterialApp(
-        home: Scaffold(
-          backgroundColor: Colors.transparent,
-          body: Center(
-            child: Container(
-              width: 300,
-              height: 300,
-              child: VideoPlayer(controller),
-            ),
-          ),
-        ),
+      // 1) Try thumbnailData (memory) first — avoids file write issues
+      final data = await VideoThumbnail.thumbnailData(
+        video: videoUrl,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 300,
+        quality: 75,
+        timeMs: 1000,
       );
 
-      // This approach is complex and might not work directly
-      // For a simpler solution, let's use a fallback approach
+      if (data != null && data.isNotEmpty) {
+        print('✅ thumbnailData succeeded (${data.length} bytes) for $videoUrl');
+        _thumbnailCache[videoUrl] = data; // cache success
+        return data;
+      }
 
-      return await _generateFallbackThumbnail();
-    } catch (e) {
-      print('❌ Error capturing video frame: $e');
-      return await _generateFallbackThumbnail();
-    }
-  }
+      print(
+          'ℹ️ thumbnailData returned null or empty for $videoUrl — trying thumbnailFile fallback');
 
-  /// Generate a simple fallback thumbnail
-  Future<Uint8List?> _generateFallbackThumbnail() async {
-    try {
-      // Create a simple placeholder image
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      final paint = Paint()
-        ..color = Colors.grey[300]!
-        ..style = PaintingStyle.fill;
+      // 2) Fallback to thumbnailFile
+      final tmpDir = await getTemporaryDirectory();
+      final thumbnailPath = await VideoThumbnail.thumbnailFile(
+        video: videoUrl,
+        thumbnailPath: tmpDir.path,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 300,
+        quality: 75,
+        timeMs: 1000,
+      );
 
-      // Draw a simple rectangle
-      canvas.drawRect(Rect.fromLTWH(0, 0, 300, 300), paint);
+      print('📁 thumbnailFile result path: $thumbnailPath');
 
-      // Draw a play icon
-      final iconPaint = Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.fill;
+      if (thumbnailPath != null) {
+        final file = File(thumbnailPath);
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          if (bytes.isNotEmpty) {
+            _thumbnailCache[videoUrl] = bytes;
+            // try cleanup but ignore deletion errors
+            try {
+              await file.delete();
+              print('🗑️ Deleted temporary thumbnail file: $thumbnailPath');
+            } catch (e) {
+              print('⚠️ Could not delete temporary thumbnail file: $e');
+            }
+            print(
+                '✅ thumbnailFile succeeded and returned ${bytes.length} bytes for $videoUrl');
+            return bytes;
+          }
+        }
+      }
 
-      final path = Path();
-      path.moveTo(110, 80);
-      path.lineTo(110, 220);
-      path.lineTo(210, 150);
-      path.close();
-      canvas.drawPath(path, iconPaint);
-
-      // Convert to image
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(300, 300);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-      return byteData?.buffer.asUint8List();
-    } catch (e) {
-      print('❌ Error generating fallback thumbnail: $e');
+      print('❌ Both thumbnailData and thumbnailFile failed for $videoUrl');
       return null;
+    } catch (e, st) {
+      print('❌ Error generating thumbnail for $videoUrl: $e\n$st');
+      return null; // don't cache null to allow retries
     }
   }
 
