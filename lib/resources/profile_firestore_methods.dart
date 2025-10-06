@@ -19,6 +19,89 @@ class SupabaseProfileMethods {
     return res;
   }
 
+  // Helper method to check if URL is from Supabase Storage (video)
+  bool _isVideoUrl(String url) {
+    return url.contains('supabase.co/storage/v1/object/public/videos') ||
+        url.endsWith('.mp4') ||
+        url.endsWith('.mov') ||
+        url.endsWith('.avi') ||
+        url.endsWith('.mkv');
+  }
+
+  // Helper method to delete video from Supabase Storage using URL
+  Future<void> _deleteVideoFromUrl(String videoUrl) async {
+    try {
+      // Extract the file path from the Supabase storage URL
+      // URL format: https://project-ref.supabase.co/storage/v1/object/public/videos/user-uid/filename.mp4
+      final uri = Uri.parse(videoUrl);
+      final pathSegments = uri.pathSegments;
+
+      // Find the index of 'videos' in the path
+      final videosIndex = pathSegments.indexOf('videos');
+      if (videosIndex != -1 && videosIndex < pathSegments.length - 1) {
+        // The path after 'videos' is the file path (user-uid/filename.mp4)
+        final filePath = pathSegments.sublist(videosIndex + 1).join('/');
+        await StorageMethods().deleteVideoFromSupabase('videos', filePath);
+      } else {
+        // Fallback: try to extract filename from URL
+        final fileName = videoUrl.split('/').last;
+        await StorageMethods().deleteVideoFromSupabase('videos', fileName);
+      }
+    } catch (e) {
+      print('Error deleting video from URL: $e');
+      rethrow;
+    }
+  }
+
+  // NEW: Method to delete all user posts (both images and videos)
+  Future<void> _deleteAllUserPosts(String uid) async {
+    try {
+      // Get all user posts with their URLs
+      final postsResponse = await _supabase
+          .from('posts')
+          .select('postId, postUrl')
+          .eq('uid', uid);
+
+      final posts = _unwrap(postsResponse) ?? postsResponse;
+
+      if (posts is List && posts.isNotEmpty) {
+        for (final post in posts) {
+          final postUrl = post['postUrl']?.toString() ?? '';
+          final postId = post['postId']?.toString() ?? '';
+
+          if (postUrl.isNotEmpty) {
+            // Check if it's a video (Supabase storage) or image (Firebase storage)
+            if (_isVideoUrl(postUrl)) {
+              // It's a video - delete from Supabase Storage
+              await _deleteVideoFromUrl(postUrl);
+            } else {
+              // It's an image - delete from Firebase Storage
+              await StorageMethods().deleteImage(postUrl);
+            }
+          }
+
+          // Delete post views
+          await _supabase.from('post_views').delete().eq('postid', postId);
+
+          // Delete related comments/replies/ratings/notifications for this post
+          await _supabase.from('comments').delete().eq('postid', postId);
+          await _supabase.from('replies').delete().eq('postid', postId);
+          await _supabase.from('post_rating').delete().eq('postid', postId);
+          await _supabase
+              .from('notifications')
+              .delete()
+              .eq('custom_data->>postId', postId);
+        }
+      }
+
+      // Finally, delete all user posts from the database
+      await _supabase.from('posts').delete().eq('uid', uid);
+    } catch (e) {
+      print('Error deleting user posts: $e');
+      rethrow;
+    }
+  }
+
   // Helper method to record push notifications (still using Firebase)
   Future<void> _recordPushNotification({
     required String type,
@@ -624,6 +707,9 @@ class SupabaseProfileMethods {
 
       profilePicUrl = userData?['photoUrl'] as String?;
 
+      // NEW: Delete all user posts (both images and videos) and their associated data
+      await _deleteAllUserPosts(uid);
+
       // Clean up followers/following relationships
       // Get followers
       final followers = await _supabase
@@ -659,16 +745,12 @@ class SupabaseProfileMethods {
             .eq('follower_id', uid);
       }
 
-      // Delete user's posts
-      await _supabase.from('posts').delete().eq('uid', uid);
-
       // Delete user's comments
       await _supabase.from('comments').delete().eq('uid', uid);
 
       // Remove user's ratings from all posts
       await _supabase.from('post_rating').delete().eq('userid', uid);
 
-// Delete user's messages and chats
       // Delete user's messages and chats
       final chatsResponse = await _supabase
           .from('chats')
@@ -689,6 +771,7 @@ class SupabaseProfileMethods {
           await _supabase.from('chats').delete().eq('id', chatId);
         }
       }
+
       // Delete follow requests
       await _supabase.from('user_follow_request').delete().eq('user_id', uid);
       await _supabase
