@@ -21,27 +21,12 @@ void main() async {
 
   try {
     // Initialize Firebase
-    if (kIsWeb) {
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: "AIzaSyAFpbPiK6u8KMIfob0pu44ca8YLGYKJHDk",
-          authDomain: "rateapp-3b78e.firebaseapp.com",
-          projectId: "rateapp-3b78e",
-          storageBucket: "rateapp-3b78e.appspot.com",
-          messagingSenderId: "411393947451",
-          appId: "1:411393947451:web:62e5c1b57a3c7a66da691e",
-          measurementId: "G-JSXVSH5PB8",
-        ),
-      );
-      await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
-    } else {
-      await Firebase.initializeApp();
-    }
+    await Firebase.initializeApp();
 
     print(
         'Firebase initialized. Current user: ${FirebaseAuth.instance.currentUser?.uid}');
 
-    // Initialize Mobile Ads SDK
+    // Initialize Mobile Ads with minimal configuration
     await MobileAds.instance.initialize();
 
     // Initialize Supabase
@@ -72,84 +57,6 @@ void main() async {
           ),
         );
     runApp(const ErrorApp());
-  }
-}
-
-// Simple GDPR compliance without complex AdMob consent that causes build issues
-class AdConsentManager {
-  static bool _consentGiven = false;
-  static bool _isEEAUser = false;
-
-  static Future<void> initialize() async {
-    // Simple implementation - you can replace this with your own logic
-    // For now, we'll assume consent is given and user is not in EEA
-    _consentGiven = true;
-    _isEEAUser = false;
-    print('Ad consent manager initialized');
-  }
-
-  static bool get shouldShowConsent => _isEEAUser && !_consentGiven;
-
-  static Future<void> showConsentDialog(BuildContext context) async {
-    return showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ad Personalization'),
-        content: const Text(
-          'We use ads to support our app. You can choose whether to see personalized ads based on your interests.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _consentGiven = false;
-              Navigator.pop(context);
-            },
-            child: const Text('Non-Personalized'),
-          ),
-          TextButton(
-            onPressed: () {
-              _consentGiven = true;
-              Navigator.pop(context);
-            },
-            child: const Text('Personalized'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static Future<void> showPrivacyOptions(BuildContext context) async {
-    return showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Privacy Settings'),
-        content: const Text(
-          'Manage your ad personalization preferences. You can change these settings at any time.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-          TextButton(
-            onPressed: () {
-              _consentGiven = !_consentGiven;
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(_consentGiven
-                      ? 'Personalized ads enabled'
-                      : 'Non-personalized ads enabled'),
-                ),
-              );
-            },
-            child: Text(_consentGiven
-                ? 'Disable Personalized Ads'
-                : 'Enable Personalized Ads'),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -247,8 +154,6 @@ class _OrientationPersistentWrapperState
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setSystemUIOverlayStyle();
-    // Initialize our simple consent manager
-    AdConsentManager.initialize();
   }
 
   @override
@@ -295,11 +200,36 @@ class DebugHome extends StatefulWidget {
 class _DebugHomeState extends State<DebugHome> {
   final SupabaseClient _supabase = Supabase.instance.client;
   String _msg = 'starting...';
+  BannerAd? _bannerAd;
 
   @override
   void initState() {
     super.initState();
     _checkSupabase();
+    _loadAd();
+  }
+
+  Future<void> _loadAd() async {
+    try {
+      _bannerAd = BannerAd(
+        adUnitId: BannerAd.testAdUnitId,
+        request: const AdRequest(),
+        size: AdSize.banner,
+        listener: BannerAdListener(
+          onAdLoaded: (Ad ad) {
+            print('Ad loaded successfully');
+            setState(() {});
+          },
+          onAdFailedToLoad: (Ad ad, LoadAdError error) {
+            print('Ad failed to load: $error');
+            ad.dispose();
+          },
+        ),
+      );
+      await _bannerAd!.load();
+    } catch (e) {
+      print('Failed to load ad: $e');
+    }
   }
 
   Future<void> _checkSupabase() async {
@@ -322,18 +252,17 @@ class _DebugHomeState extends State<DebugHome> {
   }
 
   @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Debug Supabase + Firebase'),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.privacy_tip),
-            onPressed: () => AdConsentManager.showPrivacyOptions(context),
-            tooltip: 'Manage Ad Preferences',
-          ),
-        ],
       ),
       body: Center(
         child: Padding(
@@ -347,11 +276,12 @@ class _DebugHomeState extends State<DebugHome> {
                 style: const TextStyle(fontSize: 16),
               ),
               const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: () => AdConsentManager.showPrivacyOptions(context),
-                icon: const Icon(Icons.settings),
-                label: const Text('Manage Ad Consent Preferences'),
-              ),
+              if (_bannerAd != null)
+                Container(
+                  width: _bannerAd!.size.width.toDouble(),
+                  height: _bannerAd!.size.height.toDouble(),
+                  child: AdWidget(ad: _bannerAd!),
+                ),
             ],
           ),
         ),
