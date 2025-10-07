@@ -202,6 +202,10 @@ class _DebugHomeState extends State<DebugHome> {
   String _msg = 'starting...';
   BannerAd? _bannerAd;
 
+  // Test ad unit IDs - replace with your actual ad unit IDs for production
+  static const String testBannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111'; // Android test ID
+  // For iOS: 'ca-app-pub-3940256099942544/2934735716'
+
   @override
   void initState() {
     super.initState();
@@ -212,7 +216,7 @@ class _DebugHomeState extends State<DebugHome> {
   Future<void> _loadAd() async {
     try {
       _bannerAd = BannerAd(
-        adUnitId: BannerAd.testAdUnitId,
+        adUnitId: testBannerAdUnitId, // Use test ad unit ID
         request: const AdRequest(),
         size: AdSize.banner,
         listener: BannerAdListener(
