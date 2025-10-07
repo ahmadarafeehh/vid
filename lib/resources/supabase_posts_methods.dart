@@ -1,6 +1,6 @@
 // lib/resources/supabase_posts_methods.dart
 import 'dart:typed_data';
-import 'dart:io'; // Add this line for File class
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -21,6 +21,32 @@ class SupabasePostsMethods {
       if (res is Map && res.containsKey('data')) return res['data'];
     } catch (_) {}
     return res;
+  }
+
+  // NEW: Method to log errors to Supabase errors table
+  Future<void> _logErrorToSupabase({
+    required String methodName,
+    required String errorMessage,
+    required String postId,
+    required String userId,
+    String? videoUrl,
+    String? additionalContext,
+  }) async {
+    try {
+      await _supabase.from('errors').insert({
+        'method_name': methodName,
+        'error_message': errorMessage,
+        'post_id': postId,
+        'user_id': userId,
+        'video_url': videoUrl,
+        'additional_context': additionalContext,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'environment': kDebugMode ? 'development' : 'production',
+      });
+    } catch (e) {
+      // If we can't log to errors table, at least print it
+      print('Failed to log error to Supabase: $e');
+    }
   }
 
 // Record push notification (insert into Firestore only, not Supabase)
@@ -51,9 +77,6 @@ class SupabasePostsMethods {
   // ----------------------
   // Upload a post
   // ----------------------
-  // In your SupabasePostsMethods class
-  // In your SupabasePostsMethods class - FIXED VERSION
-// Fixed uploadVideoPost method - remove the response error check
   Future<String> uploadVideoPost(
     String description,
     Uint8List file,
@@ -91,7 +114,6 @@ class SupabasePostsMethods {
         'viewers_count': boostViews,
       };
 
-      // FIXED: Remove the response error check that's causing the null error
       await _supabase.from('posts').insert(payload);
 
       res = "success";
@@ -101,7 +123,6 @@ class SupabasePostsMethods {
     return res;
   }
 
-// Also fix the regular uploadPost method to be consistent
   Future<String> uploadPost(
     String description,
     Uint8List file,
@@ -141,10 +162,9 @@ class SupabasePostsMethods {
     return res;
   }
 
-// Add this method to your SupabasePostsMethods class
   Future<String> uploadVideoPostFromFile(
     String description,
-    File videoFile, // Accept File instead of Uint8List
+    File videoFile,
     String uid,
     String username,
     String profImage,
@@ -157,7 +177,6 @@ class SupabasePostsMethods {
       String postId = _uuid.v1();
       String fileName = 'video_$postId.mp4';
 
-      // Use the StorageMethods to upload the File directly
       final String videoUrl = await StorageMethods().uploadVideoFileToSupabase(
         'videos',
         videoFile,
@@ -185,6 +204,110 @@ class SupabasePostsMethods {
       res = err.toString();
     }
     return res;
+  }
+
+  // ----------------------
+  // Delete a post (UPDATED with error logging)
+  // ----------------------
+  Future<String> deletePost(String postId) async {
+    String res = "Some error occurred";
+    String? userId;
+    String? postUrl;
+
+    try {
+      final postSel = await _supabase
+          .from('posts')
+          .select('postUrl, uid')
+          .eq('postId', postId)
+          .maybeSingle();
+      final postData = _unwrap(postSel) ?? postSel;
+      if (postData == null) throw Exception('Post does not exist');
+
+      postUrl = postData['postUrl']?.toString() ?? '';
+      userId = postData['uid']?.toString() ?? '';
+
+      if (postUrl.isNotEmpty) {
+        // Check if it's a video (Supabase storage) or image (Firebase storage)
+        if (_isVideoUrl(postUrl)) {
+          // It's a video - delete from Supabase Storage
+          await _deleteVideoFromUrl(postUrl, postId: postId, userId: userId);
+        } else {
+          // It's an image - delete from Firebase Storage
+          await StorageMethods().deleteImage(postUrl);
+        }
+      }
+
+      // Delete post views first (before deleting the post)
+      await _supabase.from('post_views').delete().eq('postid', postId);
+
+      // delete post row
+      await _supabase.from('posts').delete().eq('postId', postId);
+
+      // Delete related comments/replies/ratings/notifications
+      await _supabase.from('comments').delete().eq('postid', postId);
+      await _supabase.from('replies').delete().eq('postid', postId);
+      await _supabase.from('post_rating').delete().eq('postid', postId);
+      await _supabase
+          .from('notifications')
+          .delete()
+          .eq('custom_data->>postId', postId);
+
+      res = 'success';
+    } catch (err) {
+      // Log the error to Supabase
+      await _logErrorToSupabase(
+        methodName: 'deletePost',
+        errorMessage: err.toString(),
+        postId: postId,
+        userId: userId ?? 'unknown',
+        videoUrl: postUrl,
+        additionalContext: 'Failed to delete post',
+      );
+      res = err.toString();
+    }
+    return res;
+  }
+
+  // Helper method to check if URL is from Supabase Storage (video)
+  bool _isVideoUrl(String url) {
+    return url.contains('supabase.co/storage/v1/object/public/videos') ||
+        url.endsWith('.mp4') ||
+        url.endsWith('.mov') ||
+        url.endsWith('.avi') ||
+        url.endsWith('.mkv');
+  }
+
+  // Helper method to delete video from Supabase Storage using URL (UPDATED with error logging)
+  Future<void> _deleteVideoFromUrl(String videoUrl, 
+      {String? postId, String? userId}) async {
+    try {
+      // Extract the file path from the Supabase storage URL
+      final uri = Uri.parse(videoUrl);
+      final pathSegments = uri.pathSegments;
+      
+      // Find the index of 'videos' in the path
+      final videosIndex = pathSegments.indexOf('videos');
+      if (videosIndex != -1 && videosIndex < pathSegments.length - 1) {
+        // The path after 'videos' is the file path (user-uid/filename.mp4)
+        final filePath = pathSegments.sublist(videosIndex + 1).join('/');
+        await StorageMethods().deleteVideoFromSupabase('videos', filePath);
+      } else {
+        // Fallback: try to extract filename from URL
+        final fileName = videoUrl.split('/').last;
+        await StorageMethods().deleteVideoFromSupabase('videos', fileName);
+      }
+    } catch (e) {
+      // Log the video deletion error to Supabase
+      await _logErrorToSupabase(
+        methodName: '_deleteVideoFromUrl',
+        errorMessage: e.toString(),
+        postId: postId ?? 'unknown',
+        userId: userId ?? 'unknown',
+        videoUrl: videoUrl,
+        additionalContext: 'Failed to delete video file from storage',
+      );
+      rethrow;
+    }
   }
 
   // ----------------------
@@ -611,11 +734,6 @@ class SupabasePostsMethods {
   // ----------------------
   // Share a post through chat
   // ----------------------
-  // In lib/resources/supabase_posts_methods.dart
-
-// Update the sharePostThroughChat method to use the correct table and columns
-// In lib/resources/supabase_posts_methods.dart
-
   Future<String> sharePostThroughChat({
     required String chatId,
     required String senderId,
@@ -708,93 +826,6 @@ class SupabasePostsMethods {
       return blocked1.contains(userId2) && blocked2.contains(userId1);
     } catch (e) {
       return false;
-    }
-  }
-
-  // ----------------------
-  // Delete a post
-  // ----------------------
-  // ----------------------
-// Delete a post (FIXED for videos)
-// ----------------------
-  Future<String> deletePost(String postId) async {
-    String res = "Some error occurred";
-    try {
-      final postSel = await _supabase
-          .from('posts')
-          .select('postUrl, uid') // Get uid to help with video deletion
-          .eq('postId', postId)
-          .maybeSingle();
-      final postData = _unwrap(postSel) ?? postSel;
-      if (postData == null) throw Exception('Post does not exist');
-
-      final postUrl = postData['postUrl']?.toString() ?? '';
-      final postOwnerUid = postData['uid']?.toString() ?? '';
-
-      if (postUrl.isNotEmpty) {
-        // Check if it's a video (Supabase storage) or image (Firebase storage)
-        if (_isVideoUrl(postUrl)) {
-          // It's a video - delete from Supabase Storage
-          await _deleteVideoFromUrl(postUrl);
-        } else {
-          // It's an image - delete from Firebase Storage
-          await StorageMethods().deleteImage(postUrl);
-        }
-      }
-
-      // Delete post views first (before deleting the post)
-      await _supabase.from('post_views').delete().eq('postid', postId);
-
-      // delete post row
-      await _supabase.from('posts').delete().eq('postId', postId);
-
-      // Delete related comments/replies/ratings/notifications
-      await _supabase.from('comments').delete().eq('postid', postId);
-      await _supabase.from('replies').delete().eq('postid', postId);
-      await _supabase.from('post_rating').delete().eq('postid', postId);
-      await _supabase
-          .from('notifications')
-          .delete()
-          .eq('custom_data->>postId', postId);
-
-      res = 'success';
-    } catch (err) {
-      res = err.toString();
-    }
-    return res;
-  }
-
-// Helper method to check if URL is from Supabase Storage (video)
-  bool _isVideoUrl(String url) {
-    return url.contains('supabase.co/storage/v1/object/public/videos') ||
-        url.endsWith('.mp4') ||
-        url.endsWith('.mov') ||
-        url.endsWith('.avi') ||
-        url.endsWith('.mkv');
-  }
-
-// Helper method to delete video from Supabase Storage using URL
-  Future<void> _deleteVideoFromUrl(String videoUrl) async {
-    try {
-      // Extract the file path from the Supabase storage URL
-      // URL format: https://project-ref.supabase.co/storage/v1/object/public/videos/user-uid/filename.mp4
-      final uri = Uri.parse(videoUrl);
-      final pathSegments = uri.pathSegments;
-
-      // Find the index of 'videos' in the path
-      final videosIndex = pathSegments.indexOf('videos');
-      if (videosIndex != -1 && videosIndex < pathSegments.length - 1) {
-        // The path after 'videos' is the file path (user-uid/filename.mp4)
-        final filePath = pathSegments.sublist(videosIndex + 1).join('/');
-        await StorageMethods().deleteVideoFromSupabase('videos', filePath);
-      } else {
-        // Fallback: try to extract filename from URL
-        final fileName = videoUrl.split('/').last;
-        await StorageMethods().deleteVideoFromSupabase('videos', fileName);
-      }
-    } catch (e) {
-      print('Error deleting video from URL: $e');
-      rethrow;
     }
   }
 
